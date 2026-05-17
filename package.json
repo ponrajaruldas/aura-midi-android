@@ -30,9 +30,11 @@
     ]
   },
   "dependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/cli": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
     "@spotify/basic-pitch": "^1.0.1",
     "@tonejs/midi": "^2.0.28",
     "lucide-react": "^1.14.0",

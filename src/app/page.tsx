@@ -3,6 +3,9 @@
 import React, { useCallback, useState } from 'react';
 import { Upload, Music, Download, CheckCircle2, AlertCircle, Loader2, Sparkles, Info } from 'lucide-react';
 import { useTranscription } from '@/hooks/useTranscription';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 export default function Home() {
   const { isProcessing, progress, status, error, midiData, fileName, transcribe } = useTranscription();
@@ -32,18 +35,57 @@ export default function Home() {
     if (file) handleFile(file);
   };
 
-  const downloadMidi = () => {
+  const downloadMidi = async () => {
     if (!midiData) return;
-    const url = URL.createObjectURL(midiData);
-    const a = document.createElement('a');
-    a.href = url;
+    
     // Use original filename but change extension to .mid
     const name = fileName ? fileName.replace(/\.[^/.]+$/, "") : 'transcription';
-    a.download = `${name}.mid`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const cleanFileName = `${name}.mid`;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // Convert Blob to Base64
+        const convertBlobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = reject;
+          reader.onload = () => {
+            resolve(reader.result as string);
+          };
+          reader.readAsDataURL(blob);
+        });
+
+        const base64Data = await convertBlobToBase64(midiData);
+        const base64Content = base64Data.split(',')[1] || base64Data;
+
+        // Write file to application cache directory (requires no permissions)
+        const savedFile = await Filesystem.writeFile({
+          path: cleanFileName,
+          data: base64Content,
+          directory: Directory.Cache,
+        });
+
+        // Share the file using native sharing (requires no permissions, allows user to save to Downloads or share)
+        await Share.share({
+          title: 'Save MIDI File',
+          text: `Here is your converted MIDI file: ${cleanFileName}`,
+          url: savedFile.uri,
+          files: [savedFile.uri],
+        });
+      } catch (err: any) {
+        console.error('Error saving or sharing file:', err);
+        alert(`Failed to save MIDI file: ${err.message || err}`);
+      }
+    } else {
+      // Fallback for Web/Electron
+      const url = URL.createObjectURL(midiData);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = cleanFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
   };
 
   return (
