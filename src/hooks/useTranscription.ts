@@ -20,6 +20,9 @@ export interface TranscriptionOptions {
   minimumNoteLength?: number; // default: 5
   minFrequency?: number; // default: undefined
   maxFrequency?: number; // default: undefined
+  instrumentProgram?: number; // default: 0
+  isDrums?: boolean; // default: false
+  octaveShift?: number; // default: 0
 }
 
 export function useTranscription() {
@@ -38,6 +41,9 @@ export function useTranscription() {
     const minNoteLen = options?.minimumNoteLength ?? 5;
     const minFreq = options?.minFrequency;
     const maxFreq = options?.maxFrequency;
+    const instrumentProgram = options?.instrumentProgram ?? 0;
+    const isDrums = options?.isDrums ?? false;
+    const octaveShift = options?.octaveShift ?? 0;
 
     setState({ 
       isProcessing: true, 
@@ -70,6 +76,8 @@ export function useTranscription() {
       const midi = new Midi();
       const track = midi.addTrack();
       track.name = file.name.replace(/\.[^/.]+$/, ""); // Use filename as track name
+      track.instrument.number = instrumentProgram;
+      track.channel = isDrums ? 9 : 0;
 
       for (let i = 0; i < totalSegments; i++) {
         // Calculate the actual start time in the original audio
@@ -127,8 +135,10 @@ export function useTranscription() {
 
         // Add notes to track with time offset
         filteredNotes.forEach(note => {
+          let transposedPitch = note.pitchMidi + (octaveShift * 12);
+          transposedPitch = Math.max(0, Math.min(127, transposedPitch));
           track.addNote({
-            midi: note.pitchMidi,
+            midi: transposedPitch,
             time: note.startTimeSeconds + segmentStartTime,
             duration: note.durationSeconds,
             velocity: note.amplitude,

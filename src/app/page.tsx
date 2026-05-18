@@ -7,7 +7,9 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
-const PRESETS: Record<string, Required<TranscriptionOptions>> = {
+type BaseTranscriptionOptions = Required<Omit<TranscriptionOptions, 'instrumentProgram' | 'isDrums' | 'octaveShift'>>;
+
+const PRESETS: Record<string, BaseTranscriptionOptions> = {
   universal: {
     onsetThreshold: 0.25,
     frameThreshold: 0.25,
@@ -45,6 +47,18 @@ const PRESETS: Record<string, Required<TranscriptionOptions>> = {
   }
 };
 
+const INSTRUMENTS = [
+  { id: 'piano', name: 'Grand Piano', icon: '🎹', program: 0, isDrums: false, color: '#A855F7' },
+  { id: 'acoustic_guitar', name: 'Acoustic Guitar', icon: '🎸', program: 24, isDrums: false, color: '#F59E0B' },
+  { id: 'electric_guitar', name: 'Electric Guitar', icon: '🎸', program: 27, isDrums: false, color: '#EF4444' },
+  { id: 'violin', name: 'Strings Ensemble', icon: '🎻', program: 48, isDrums: false, color: '#EC4899' },
+  { id: 'sax', name: 'Sax & Brass', icon: '🎷', program: 64, isDrums: false, color: '#10B981' },
+  { id: 'flute', name: 'Woodwind Flute', icon: '💨', program: 73, isDrums: false, color: '#06B6D4' },
+  { id: 'synth_lead', name: 'Synth Square', icon: '🔊', program: 80, isDrums: false, color: '#3B82F6' },
+  { id: 'synth_pad', name: 'Synth Warm Pad', icon: '☁️', program: 89, isDrums: false, color: '#D946EF' },
+  { id: 'drums', name: 'Drums & Rhythm', icon: '🥁', program: 0, isDrums: true, color: '#F43F5E' },
+];
+
 export default function Home() {
   const { isProcessing, progress, status, error, midiData, fileName, transcribe } = useTranscription();
   const [isDragging, setIsDragging] = useState(false);
@@ -52,13 +66,17 @@ export default function Home() {
   // Advanced Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [preset, setPreset] = useState<string>('universal');
-  const [settings, setSettings] = useState<Required<TranscriptionOptions>>({
+  const [settings, setSettings] = useState<BaseTranscriptionOptions>({
     onsetThreshold: 0.25,
     frameThreshold: 0.25,
     minimumNoteLength: 5,
     minFrequency: 30,
     maxFrequency: 10000,
   });
+
+  // Instrument & Octave Transposition State
+  const [selectedInstrument, setSelectedInstrument] = useState(INSTRUMENTS[0]);
+  const [octaveShift, setOctaveShift] = useState<number>(0);
 
   const applyPreset = (presetName: string) => {
     setPreset(presetName);
@@ -67,24 +85,29 @@ export default function Home() {
     }
   };
 
-  const handleFile = (file: File) => {
+  const handleFile = useCallback((file: File) => {
     // Expand support to all common audio formats decodable by the browser
     const supportedExtensions = ['.mp3', '.wav', '.aac', '.m4a', '.mpeg', '.mpg', '.ogg', '.flac', '.webm'];
     const hasSupportedExtension = supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     
     if (file.type.includes('audio') || hasSupportedExtension) {
-      transcribe(file, settings);
+      transcribe(file, {
+        ...settings,
+        instrumentProgram: selectedInstrument.program,
+        isDrums: selectedInstrument.isDrums,
+        octaveShift: octaveShift
+      });
     } else {
       alert("Unsupported file format. Please upload a valid audio file (MP3, WAV, AAC, MPEG, etc).");
     }
-  };
+  }, [transcribe, settings, selectedInstrument, octaveShift]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
-  }, [transcribe, settings]);
+  }, [handleFile]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -156,7 +179,7 @@ export default function Home() {
       
       {/* Header */}
       <header style={{ textAlign: 'center', marginBottom: '48px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyComposite: 'center', gap: '12px', marginBottom: '16px', justifyContent: 'center' }}>
           <div className="glass" style={{ padding: '12px', background: 'var(--primary)', color: 'white', borderRadius: '16px' }}>
             <Music size={32} />
           </div>
@@ -215,6 +238,72 @@ export default function Home() {
                   background: 'rgba(255, 255, 255, 0.015)'
                 }}
               >
+                {/* Synthesizer Instrument Selector */}
+                <div style={{ marginBottom: '28px' }}>
+                  <span style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: '600' }}>
+                    Target Synthesizer Instrument (MIDI Program)
+                  </span>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', 
+                    gap: '12px' 
+                  }}>
+                    {INSTRUMENTS.map((inst) => {
+                      const isSelected = selectedInstrument.id === inst.id;
+                      return (
+                        <div
+                          key={inst.id}
+                          onClick={() => setSelectedInstrument(inst)}
+                          className="glass glass-interactive"
+                          style={{
+                            padding: '12px',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            border: '1px solid',
+                            borderColor: isSelected ? inst.color : 'var(--glass-border)',
+                            background: isSelected ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                            boxShadow: isSelected ? `0 0 12px ${inst.color}33` : 'none',
+                            transform: isSelected ? 'scale(1.03)' : 'none',
+                            transition: 'all 0.2s ease',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <span style={{ fontSize: '2rem', marginBottom: '8px' }}>{inst.icon}</span>
+                          <span style={{ fontSize: '0.8rem', fontWeight: isSelected ? '700' : '500', color: isSelected ? inst.color : 'var(--text-color)' }}>
+                            {inst.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Octave Shift Slider */}
+                <div style={{ marginBottom: '28px', maxWidth: '400px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Octave Transposition (Pitch Shift)</span>
+                    <span style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '1rem' }}>
+                      {octaveShift === 0 ? 'Original Pitch' : octaveShift > 0 ? `+${octaveShift} Octave${octaveShift > 1 ? 's' : ''}` : `${octaveShift} Octave${octaveShift < -1 ? 's' : ''}`}
+                    </span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="-2" 
+                    max="2" 
+                    step="1" 
+                    value={octaveShift}
+                    onChange={(e) => setOctaveShift(parseInt(e.target.value))}
+                    style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer', height: '6px', borderRadius: '3px' }}
+                  />
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+                    Ideal for mapping human vocals/humming: shift **Up** (+1 or +2) to play on higher melody instruments (Flute, Violin), or **Down** (-1 or -2) for Bass tracks.
+                  </p>
+                </div>
+
                 {/* Preset Selector */}
                 <div style={{ marginBottom: '24px' }}>
                   <span style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: '500' }}>
@@ -457,13 +546,15 @@ export default function Home() {
             <p style={{ color: 'var(--text-muted)', marginBottom: '8px' }}>
               Successfully converted <strong>{fileName}</strong>
             </p>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '40px' }}>Notes have been extracted with high precision.</p>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '40px' }}>
+              Notes have been extracted and mapped to <strong style={{ color: selectedInstrument.color }}>{selectedInstrument.icon} {selectedInstrument.name}</strong>.
+            </p>
             
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
               <button className="btn btn-primary" onClick={downloadMidi} style={{ fontSize: '1.1rem', padding: '16px 32px' }}>
                 <Download size={24} /> Download MIDI
               </button>
-              <button className="btn" onClick={() => window.location.reload()} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)' }}>
+              <button className="btn" onClick={() => window.location.reload()} style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)' }}>
                 Convert Another
               </button>
             </div>
