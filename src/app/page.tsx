@@ -179,7 +179,7 @@ export default function Home() {
       
       {/* Header */}
       <header style={{ textAlign: 'center', marginBottom: '48px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyComposite: 'center', gap: '12px', marginBottom: '16px', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
           <div className="glass" style={{ padding: '12px', background: 'var(--primary)', color: 'white', borderRadius: '16px' }}>
             <Music size={32} />
           </div>
