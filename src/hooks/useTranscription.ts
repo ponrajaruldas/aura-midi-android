@@ -14,6 +14,14 @@ export interface TranscriptionState {
   fileName: string | null;
 }
 
+export interface TranscriptionOptions {
+  onsetThreshold?: number; // default: 0.25
+  frameThreshold?: number; // default: 0.25
+  minimumNoteLength?: number; // default: 5
+  minFrequency?: number; // default: undefined
+  maxFrequency?: number; // default: undefined
+}
+
 export function useTranscription() {
   const [state, setState] = useState<TranscriptionState>({
     isProcessing: false,
@@ -24,7 +32,13 @@ export function useTranscription() {
     fileName: null,
   });
 
-  const transcribe = useCallback(async (file: File) => {
+  const transcribe = useCallback(async (file: File, options?: TranscriptionOptions) => {
+    const onsetThresh = options?.onsetThreshold ?? 0.25;
+    const frameThresh = options?.frameThreshold ?? 0.25;
+    const minNoteLen = options?.minimumNoteLength ?? 5;
+    const minFreq = options?.minFrequency;
+    const maxFreq = options?.maxFrequency;
+
     setState({ 
       isProcessing: true, 
       progress: 0, 
@@ -44,11 +58,12 @@ export function useTranscription() {
       setState(s => ({ ...s, status: 'Initializing AI model...', progress: 15 }));
       
       // 2. Initialize Basic Pitch
+      // We initialize it once to reuse across segments
       const basicPitch = new BasicPitch(MODEL_URL);
       
       // 3. Segment and Process
       const segmentDuration = 30;
-      const overlapDuration = 0.5;
+      const overlapDuration = 0.5; // 0.5s overlap to maintain continuity
       const segments = getSegments(audioBuffer, segmentDuration, overlapDuration);
       const totalSegments = segments.length;
       
@@ -57,12 +72,14 @@ export function useTranscription() {
       track.name = file.name.replace(/\.[^/.]+$/, ""); // Use filename as track name
 
       for (let i = 0; i < totalSegments; i++) {
+        // Calculate the actual start time in the original audio
+        // The first segment starts at 0. Subsequent ones start at i * (duration - overlap)
         const segmentStartTime = i * (segmentDuration - overlapDuration);
         
         setState(s => ({ 
           ...s, 
           status: `AI Analysis: Processing segment ${i + 1} of ${totalSegments}...`, 
-          progress: 15 + (i / totalSegments) * 75 
+          progress: 15 + (i / totalSegments) * 70 
         }));
 
         const frames: number[][] = [];
@@ -78,17 +95,38 @@ export function useTranscription() {
           },
           (p) => {
             // Update sub-progress
-            const segmentContribution = 75 / totalSegments;
+            const segmentContribution = 70 / totalSegments;
             const totalProgress = 15 + (i * segmentContribution) + (p * segmentContribution);
-            setState(s => ({ ...s, progress: Math.min(95, totalProgress) }));
+            setState(s => ({ ...s, progress: Math.min(90, totalProgress) }));
           }
         );
 
-        const notes = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
+        // Convert raw output to note events
+        // Parameters: frames, onsets, onsetThreshold, frameThreshold, minNoteLength, inferOnsets, maxFreq, minFreq
+        const notes = outputToNotesPoly(
+          frames,
+          onsets,
+          onsetThresh,
+          frameThresh,
+          minNoteLen,
+          true,
+          maxFreq || null,
+          minFreq || null
+        );
         const notesWithBends = addPitchBendsToNoteEvents(contours, notes);
         const segmentNotes = noteFramesToTime(notesWithBends);
         
-        segmentNotes.forEach(note => {
+        // Filter out notes starting in the overlapping region at the end of the segment.
+        // Let the next segment transcribe them from the beginning instead of cutting them off.
+        const filteredNotes = segmentNotes.filter(note => {
+          if (i < totalSegments - 1) {
+            return note.startTimeSeconds < (segmentDuration - overlapDuration);
+          }
+          return true;
+        });
+
+        // Add notes to track with time offset
+        filteredNotes.forEach(note => {
           track.addNote({
             midi: note.pitchMidi,
             time: note.startTimeSeconds + segmentStartTime,
@@ -98,9 +136,44 @@ export function useTranscription() {
         });
       }
 
-      setState(s => ({ ...s, status: 'Finalizing MIDI structure...', progress: 95 }));
+      setState(s => ({ ...s, status: 'Deduplicating and merging notes...', progress: 92 }));
 
-      // 4. Finalize MIDI
+      // 4. Smart Deduplication & Merging across segment boundaries
+      // Sort notes by pitch and then by start time
+      track.notes.sort((a, b) => {
+        if (a.midi !== b.midi) return a.midi - b.midi;
+        return a.time - b.time;
+      });
+
+      const mergedNotes: any[] = [];
+      track.notes.forEach(note => {
+        if (mergedNotes.length === 0) {
+          mergedNotes.push(note);
+          return;
+        }
+
+        const lastNote = mergedNotes[mergedNotes.length - 1];
+        if (lastNote.midi === note.midi) {
+          const lastNoteEnd = lastNote.time + lastNote.duration;
+          // If the current note starts before the previous note ends, or is extremely close (e.g. within 80ms)
+          if (note.time <= lastNoteEnd + 0.08) {
+            // Merge them! Extend duration to the maximum of both notes
+            const newEnd = Math.max(lastNoteEnd, note.time + note.duration);
+            lastNote.duration = newEnd - lastNote.time;
+            
+            // Average the velocity to smooth out transitions
+            lastNote.velocity = (lastNote.velocity + note.velocity) / 2;
+            return;
+          }
+        }
+        mergedNotes.push(note);
+      });
+
+      track.notes = mergedNotes;
+
+      setState(s => ({ ...s, status: 'Generating MIDI file...', progress: 95 }));
+
+      // 5. Finalize MIDI
       const midiBlob = new Blob([midi.toArray() as any], { type: 'audio/midi' });
       
       setState(s => ({

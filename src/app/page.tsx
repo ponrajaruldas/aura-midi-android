@@ -1,15 +1,71 @@
 "use client";
 
 import React, { useCallback, useState } from 'react';
-import { Upload, Music, Download, CheckCircle2, AlertCircle, Loader2, Sparkles, Info } from 'lucide-react';
-import { useTranscription } from '@/hooks/useTranscription';
+import { Upload, Music, Download, CheckCircle2, AlertCircle, Loader2, Sparkles, Info, Sliders, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranscription, TranscriptionOptions } from '@/hooks/useTranscription';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
+const PRESETS: Record<string, Required<TranscriptionOptions>> = {
+  universal: {
+    onsetThreshold: 0.25,
+    frameThreshold: 0.25,
+    minimumNoteLength: 5,
+    minFrequency: 30,
+    maxFrequency: 10000,
+  },
+  melody: {
+    onsetThreshold: 0.20,
+    frameThreshold: 0.25,
+    minimumNoteLength: 4,
+    minFrequency: 150,
+    maxFrequency: 3000,
+  },
+  piano: {
+    onsetThreshold: 0.25,
+    frameThreshold: 0.30,
+    minimumNoteLength: 5,
+    minFrequency: 30,
+    maxFrequency: 5000,
+  },
+  bass: {
+    onsetThreshold: 0.30,
+    frameThreshold: 0.20,
+    minimumNoteLength: 6,
+    minFrequency: 20,
+    maxFrequency: 300,
+  },
+  guitar: {
+    onsetThreshold: 0.25,
+    frameThreshold: 0.25,
+    minimumNoteLength: 5,
+    minFrequency: 80,
+    maxFrequency: 1200,
+  }
+};
+
 export default function Home() {
   const { isProcessing, progress, status, error, midiData, fileName, transcribe } = useTranscription();
   const [isDragging, setIsDragging] = useState(false);
+  
+  // Advanced Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [preset, setPreset] = useState<string>('universal');
+  const [settings, setSettings] = useState<Required<TranscriptionOptions>>({
+    onsetThreshold: 0.25,
+    frameThreshold: 0.25,
+    minimumNoteLength: 5,
+    minFrequency: 30,
+    maxFrequency: 10000,
+  });
+
+  const applyPreset = (presetName: string) => {
+    setPreset(presetName);
+    if (PRESETS[presetName]) {
+      setSettings(PRESETS[presetName]);
+    }
+  };
 
   const handleFile = (file: File) => {
     // Expand support to all common audio formats decodable by the browser
@@ -17,7 +73,7 @@ export default function Home() {
     const hasSupportedExtension = supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     
     if (file.type.includes('audio') || hasSupportedExtension) {
-      transcribe(file);
+      transcribe(file, settings);
     } else {
       alert("Unsupported file format. Please upload a valid audio file (MP3, WAV, AAC, MPEG, etc).");
     }
@@ -28,7 +84,7 @@ export default function Home() {
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
-  }, [transcribe]);
+  }, [transcribe, settings]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -99,9 +155,9 @@ export default function Home() {
     }}>
       
       {/* Header */}
-      <header style={{ textAlign: 'center', marginBottom: '60px' }}>
+      <header style={{ textAlign: 'center', marginBottom: '48px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
-          <div className="glass" style={{ padding: '12px', background: 'var(--primary)', color: 'white' }}>
+          <div className="glass" style={{ padding: '12px', background: 'var(--primary)', color: 'white', borderRadius: '16px' }}>
             <Music size={32} />
           </div>
           <h1 className="title-gradient" style={{ fontSize: '3rem' }}>AuraMIDI</h1>
@@ -115,6 +171,224 @@ export default function Home() {
       {/* Main Action Zone */}
       <div style={{ position: 'relative', maxWidth: '800px', width: '100%', margin: '0 auto' }}>
         
+        {/* Advanced Settings Panel */}
+        {!isProcessing && !midiData && (
+          <div style={{ width: '100%', marginBottom: '24px' }}>
+            <div 
+              onClick={() => setShowSettings(!showSettings)}
+              className="glass glass-interactive"
+              style={{ 
+                padding: '16px 24px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                borderRadius: showSettings ? '24px 24px 0 0' : '24px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <Sliders size={20} color="var(--primary)" />
+                <span style={{ fontWeight: '600', fontSize: '1.05rem' }}>AI Transcription Settings</span>
+                <span style={{ 
+                  fontSize: '0.75rem', 
+                  background: 'rgba(168, 85, 247, 0.1)', 
+                  color: 'var(--primary)', 
+                  padding: '4px 10px', 
+                  borderRadius: '20px',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Preset: {preset}
+                </span>
+              </div>
+              {showSettings ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </div>
+
+            {showSettings && (
+              <div 
+                className="glass" 
+                style={{ 
+                  padding: '24px', 
+                  borderRadius: '0 0 24px 24px',
+                  borderTop: 'none',
+                  background: 'rgba(255, 255, 255, 0.015)'
+                }}
+              >
+                {/* Preset Selector */}
+                <div style={{ marginBottom: '24px' }}>
+                  <span style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: '500' }}>
+                    Select Instrument Preset
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {Object.keys(PRESETS).map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => applyPreset(key)}
+                        className="btn"
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '0.85rem',
+                          borderRadius: '10px',
+                          background: preset === key ? 'var(--primary)' : 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid',
+                          borderColor: preset === key ? 'var(--primary)' : 'var(--glass-border)',
+                          color: preset === key ? 'white' : 'var(--text-color)',
+                          transition: 'all 0.2s ease',
+                          textTransform: 'capitalize',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        {preset === key && <Check size={14} />}
+                        {key === 'universal' && <Music size={14} />}
+                        {key === 'melody' && <Sparkles size={14} />}
+                        {key === 'piano' && <Info size={14} />}
+                        {key === 'bass' && <Sliders size={14} />}
+                        {key === 'guitar' && <Music size={14} />}
+                        {key}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sliders Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+                  {/* Onset Slider */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Onset Sensitivity</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{settings.onsetThreshold}</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0.05" 
+                      max="0.95" 
+                      step="0.05" 
+                      value={settings.onsetThreshold}
+                      onChange={(e) => {
+                        setPreset('custom');
+                        setSettings(s => ({ ...s, onsetThreshold: parseFloat(e.target.value) }));
+                      }}
+                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer', height: '6px', borderRadius: '3px' }}
+                    />
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+                      Detects note beginnings. **Lower** = more sensitive (soft notes). **Higher** = filters out noise.
+                    </p>
+                  </div>
+
+                  {/* Frame Slider */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Frame Sustain Sensitivity</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{settings.frameThreshold}</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0.05" 
+                      max="0.95" 
+                      step="0.05" 
+                      value={settings.frameThreshold}
+                      onChange={(e) => {
+                        setPreset('custom');
+                        setSettings(s => ({ ...s, frameThreshold: parseFloat(e.target.value) }));
+                      }}
+                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer', height: '6px', borderRadius: '3px' }}
+                    />
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+                      Controls note release. **Lower** = sustained notes hold longer. **Higher** = cuts notes sooner.
+                    </p>
+                  </div>
+
+                  {/* Min Note Length */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Minimum Note Length</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{settings.minimumNoteLength} frames</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="15" 
+                      step="1" 
+                      value={settings.minimumNoteLength}
+                      onChange={(e) => {
+                        setPreset('custom');
+                        setSettings(s => ({ ...s, minimumNoteLength: parseInt(e.target.value) }));
+                      }}
+                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer', height: '6px', borderRadius: '3px' }}
+                    />
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+                      Filters out transient audio clicks/pops. **Lower** = fast rapid notes. **Higher** = cleaner MIDI.
+                    </p>
+                  </div>
+
+                  {/* Frequency Band Filters */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Frequency Filter Band</span>
+                      <span style={{ color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                        {settings.minFrequency}Hz - {settings.maxFrequency}Hz
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Min (Hz)</span>
+                        <input 
+                          type="number" 
+                          min="20" 
+                          max="2000" 
+                          value={settings.minFrequency}
+                          onChange={(e) => {
+                            setPreset('custom');
+                            setSettings(s => ({ ...s, minFrequency: Math.max(20, parseInt(e.target.value) || 20) }));
+                          }}
+                          style={{ 
+                            width: '100%', 
+                            background: 'rgba(255,255,255,0.03)', 
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '8px',
+                            color: 'var(--text-color)',
+                            padding: '6px 10px',
+                            fontSize: '0.8rem'
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Max (Hz)</span>
+                        <input 
+                          type="number" 
+                          min="200" 
+                          max="18000" 
+                          value={settings.maxFrequency}
+                          onChange={(e) => {
+                            setPreset('custom');
+                            setSettings(s => ({ ...s, maxFrequency: Math.min(18000, parseInt(e.target.value) || 10000) }));
+                          }}
+                          style={{ 
+                            width: '100%', 
+                            background: 'rgba(255,255,255,0.03)', 
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '8px',
+                            color: 'var(--text-color)',
+                            padding: '6px 10px',
+                            fontSize: '0.8rem'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+                      Rejects audio outside this range. Eliminates sub-bass noise or high harmonic overtones.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
+        )}
+
         {!isProcessing && !midiData && (
           <div 
             className={`glass glass-interactive ${isDragging ? 'pulse-primary' : ''}`}
